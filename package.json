@@ -1,0 +1,19 @@
+{
+  "name": "shell-allow-list",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.78.0",
+    "@types/shell-quote": "^1.7.5"
+  },
+  "dependencies": {
+    "shell-quote": "^1.8.4"
+  }
+}
