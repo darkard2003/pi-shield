@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn-integrity
+
+# Build outputs
+build/
+dist/
+*.tsbuildinfo
+
+# IDE and Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_STORE
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Package lock files (optional, often ignored)
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Logs
+logs/
+*.log
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Testing
+.nyc_output/
+coverage/
+
+# Other
+*.pid
+*.seed
+*.pid.swp
+.pugs
+.sass-cache
+*.tmp
+*.temp
+.cache/
+
+# Pi-specific
