@@ -15,5 +15,11 @@
   },
   "dependencies": {
     "shell-quote": "^1.8.4"
+  },
+  "pi": {
+    "extensions": [
+      "./src/path-guard.ts",
+      "./src/shell-guard.ts"
+    ]
   }
 }

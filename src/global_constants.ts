@@ -92,5 +92,6 @@ export const GLOBAL_ALLOWLIST = new Set([
 
 export const ALLOWED_PATH_SUFFIXES = [
   "@earendil-works/pi-coding-agent/docs",
+  "@earendil-works/pi-coding-agent/README.md",
 ];
 
