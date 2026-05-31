@@ -1,166 +1,80 @@
-# PI Shield 🔒
+# pi-shield
 
-A security guardrail extension for the PI coding agent that restricts dangerous bash commands, prevents directory traversal attacks, and blocks destructive operations.
+Security guardrail and custom tool extension for the Pi Coding Agent (`@earendil-works/pi-coding-agent`).
 
-## Overview
+## Features
 
-PI Shield intercepts and validates all tool calls and bash commands within the PI coding agent environment. It provides multiple layers of protection:
+### 1. Path Traversal Guardrail (`pathTraversalGuard`)
+- Enforces strict security boundaries around the current working directory.
+- Restricts filesystem tool access (`read`, `write`, `edit`, `grep`, `find`, `ls`, etc.) to files within the workspace directory, `/tmp`, or explicitly allowed path suffixes.
+- Completely blocks access or modification to `.git` internals.
 
-- **Bash Command Allowlisting**: Only explicitly allowed commands can execute
-- **Path Traversal Prevention**: Restricts file access to the current project directory and `/tmp`
-- **Destructive Operation Block**: Prevents file deletion, format, reboot, etc.
-- **Network Isolation**: Blocks outbound connections, SSH, curl, wget, etc.
-- **Shell Injection Protection**: Disables dangerous operators like `;`, `&&`, `||`
+### 2. Bash Secure Allowlist & Blocklist (`bashSecureAllowlist`)
+- Prohibits command substitution using `$()` or backticks.
+- Restricts bash tool execution to a very narrow global allowlist (`pwd`, `npm`, `pnpm`, `yarn`, `echo`, `pytest`, `vitest`).
+- Implements a strict blocklist with descriptive safety instructions (e.g. blocking `cat`, interactive pagers/editors like `less`/`vim`, dangerous disk utilities like `rm`/`dd`, network tools, and Turing-complete interpreters by default).
+- Blocks dangerous shell operators (`;`, `&&`, `||`) and file redirections (except safe globbing and output redirection to `/dev/null`).
 
-## How It Works
+### 3. Custom Secure Tools (`registerCustomTools`)
+- Replaces standard tools with safe TypeScript equivalents for `ls`, `find`, and `grep` to bypass shell hazards.
+- Implements context window size protection: automatically truncates massive tool outputs (> 5 KB or 200 lines) and writes the full content to secure scratch files (e.g., `/tmp/pi-shield-*.txt`).
+- Dynamically extends agent system instructions upon startup via `before_agent_start`.
 
-### 1. Global Blocklist
+## Configuration (`pi-security.json`)
 
-PI Shield ships with a comprehensive list of blocked commands, each with a helpful explanation of why they're restricted and what to do instead:
-
-| Category | Example Commands |
-|----------|------------------|
-| File Reading | `cat`, `head`, `tail`, `sed`, `awk`, `strings`, `xxd` |
-| Interactive Editors | `vim`, `vi`, `nano`, `emacs`, `ed` |
-| Pagers & Monitors | `less`, `more`, `top`, `htop`, `btop`, `watch` |
-| Destructive Commands | `rm`, `shred`, `wipe`, `dd`, `mkfs` |
-| Network/Remote | `ssh`, `scp`, `curl`, `wget`, `nc`, `nmap` |
-| System Control | `reboot`, `shutdown`, `systemctl`, `kill` |
-| Shell Nesting | `bash`, `sh`, `zsh`, `tmux`, `screen` |
-
-### 2. Global Allowlist
-
-These commands are always allowed:
-
-- `ls`, `pwd`, `grep`, `find`, `npm`, `echo`, `pytest`, `vitest`
-
-### 3. Project Configuration
-
-Create a `pi-security.json` file in your project root to customize allowed/blocked commands:
+Customize security rules for your project by creating a `pi-security.json` file in the project root:
 
 ```json
 {
-  "allow": ["custom-cmd", "my-tool"],
+  "allow": ["python3", "my-custom-command"],
   "block": {
-    "git": "Use the native read/edit tools instead of git commands"
+    "some-command": "Specific reason for blocking this command"
   }
 }
 ```
 
-## Using File Tools
-
-The `read`, `write`, and `edit` native tools are **always available** and should be used instead of trying to execute `cat` or other file commands via bash.
-
-### Path Restrictions
-
-- [x] Files inside the current working directory (project root)
-- [x] Files inside `/tmp`
-- [x] Allowed documentation paths (e.g., `@earendil-works/pi-coding-agent/docs`)
-
-### Blocked Paths
-
-- [ ] Paths outside the project directory
-- [ ] Access to `.git` internals
-- [ ] Attempts to traverse `..` to escape the project
-
-### Example Block Messages
-
-When blocked, you'll see helpful messages like:
-
-```
-🚨 Blocked file access: /etc/passwd
-SECURITY GUARDRAIL: Directory traversal blocked.
-
-🚨 Blocked file access: ../sensitive.txt
-SECURITY GUARDRAIL: Directory traversal blocked...
-
-Blocked forbidden keyword: 'rm'
-ACTION BLOCKED. You do not have privileges to delete files.
-```
+### Precedence Hierarchy:
+1. **Project-specific blocklist** (defined in `pi-security.json` `block` object) overrides everything.
+2. **Project-specific allowlist** (defined in `pi-security.json` `allow` array) overrides the global blocklist (e.g., allowing `python` or `node`).
+3. **Global blocklist** (defined in `global_constants.ts`) blocks forbidden commands.
+4. **Global allowlist** (defined in `global_constants.ts`) permits safe commands.
 
 ## Installation
 
-There are two ways to use PI Shield:
+Clone the `pi-shield` repository from GitHub into either a global or local extensions directory:
 
-### Option 1: Install Globally (System-wide)
+### Option A: Global Installation
+Clone into the global agent extensions directory:
+```bash
+# Create directory if it does not exist
+mkdir -p ~/.pi/agent/extensions
 
-Clone or copy the `pi-shield` directory directly to your global extensions folder:
+# Clone the repository
+git clone https://github.com/your-username/pi-shield.git ~/.pi/agent/extensions/pi-shield
 
-The extension will be located at:
-```
-~/.pi/agent/extensions/pi-shield/
-```
-
-Once installed globally, security guards are active for all your PI sessions.
-
-### Option 2: Install Locally (Project-specific)
-
-Clone or copy the `pi-shield` directory to your project's `.pi/extensions` folder:
-
-The extension will be located at:
-```
-/path/to/your/project/.pi/extensions/pi-shield/
+# Navigate and install
+cd ~/.pi/agent/extensions/pi-shield
+npm install
 ```
 
-This installs it per-project. Each project can have its own `pi-security.json` configuration.
+### Option B: Local Installation
+Clone into your specific project's `.pi/extensions` directory:
+```bash
+# Create directory if it does not exist
+mkdir -p .pi/extensions
 
-### How It Works
+# Clone the repository
+git clone https://github.com/your-username/pi-shield.git .pi/extensions/pi-shield
 
-When PI loads a project, it scans the `extensions` directory and automatically registers any TypeScript files. PI Shield hooks into:
-
-- `session_start` - Loads configuration and shows status notifications
-- `tool_call` - Validates file read/write/edit tools
-- `bash` commands - Checks commands against blocklist/allowlist
-
-### Customizing per-project
-
-After installing locally, create a `pi-security.json` in your project root:
-
-```json
-{
-  "allow": ["custom-tool"],
-  "block": {
-    "git": "Use git from terminal instead"
-  }
-}
+# Navigate and install
+cd .pi/extensions/pi-shield
+npm install
 ```
 
-This config is automatically loaded on session start.
+## Development and Verification
 
-## Usage
-
-1. **Just start using PI** - security guards are active by default
-2. **Create `pi-security.json`** to customize the rules in your project (optional)
-
-### pi-security.json Example
-
-```json
-{
-  "allow": [
-    "npm",
-    "pnpm",
-    "my-custom-tool"
-  ],
-  "block": {
-    "git": "Use git commands manually outside PI",
-    "git commit": "Use git commit from terminal directly"
-  }
-}
+Run self-contained verification tests to validate all security behaviors:
+```bash
+npx ts-node src/test_pi_shield.ts
 ```
-
-## Notification System
-
-PI Shield uses the built-in UI notification system to inform you when commands are blocked:
-
-- 🔒 Green lock icon when guards are enabled
-- 🚨 Warning when a command is blocked
-- ℹ️ Informational messages when configuration is loaded
-
-## Development
-
-### TypeScript Dependencies
-
-- `@earendil-works/pi-coding-agent` - PI agent SDK
-- `shell-quote` - Command tokenization
-- `@types/shell-quote` - Type definitions
-
+*(Runs validation for validatePath, shell overrides, command substitutions, custom tools, and output truncation/scratch file redirection)*
