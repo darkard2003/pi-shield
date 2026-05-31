@@ -75,16 +75,38 @@ export const GLOBAL_BLOCKLIST = new Map<string, string>([
   ["kill", "ACTION BLOCKED. Process termination via bash is disabled. Let processes exit naturally."],
   ["killall", "ACTION BLOCKED. Mass process termination is disabled."],
   ["pkill", "ACTION BLOCKED. Process termination utilities are disabled."],
-  ["ulimit", "ACTION BLOCKED. Modifying system resource limits is restricted."]
+  ["ulimit", "ACTION BLOCKED. Modifying system resource limits is restricted."],
+
+  // --- TURING-COMPLETE SHELLS & INTERPRETERS ---
+  ["python", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted to maintain sandbox boundaries. If needed, please explicitly enable 'python' in your project's 'pi-security.json' allowlist."],
+  ["python3", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted to maintain sandbox boundaries. If needed, please explicitly enable 'python3' in your project's 'pi-security.json' allowlist."],
+  ["node", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted to maintain sandbox boundaries. If needed, please explicitly enable 'node' in your project's 'pi-security.json' allowlist."],
+  ["perl", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted. Explicitly allow 'perl' in 'pi-security.json' if needed."],
+  ["ruby", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted. Explicitly allow 'ruby' in 'pi-security.json' if needed."],
+  ["php", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted. Explicitly allow 'php' in 'pi-security.json' if needed."],
+  ["deno", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted. Explicitly allow 'deno' in 'pi-security.json' if needed."],
+  ["bun", "ACTION BLOCKED. Turing-complete languages/interpreters are globally restricted. Explicitly allow 'bun' in 'pi-security.json' if needed."],
+
+  // --- DEVELOPER UTILITIES (Blocked in bash to force secure native tools) ---
+  ["ls", "ACTION BLOCKED. Running 'ls' via bash is disabled for security. Please use your native 'ls' tool."],
+  ["grep", "ACTION BLOCKED. Running 'grep' via bash is disabled for security. Please use your native 'grep' tool."],
+  ["find", "ACTION BLOCKED. Running 'find' via bash is disabled for security. Please use your native 'find' tool."],
+  ["git", "ACTION BLOCKED. Git commands via bash are disabled. Please perform git operations manually outside the agent environment or use native version control features if available."],
+  ["sudo", "ACTION BLOCKED. Sudo/privilege escalation is strictly prohibited in this sandboxed environment."],
+  ["gh", "ACTION BLOCKED. GitHub CLI commands are disabled to prevent unauthorized remote operations."],
+  ["apt", "ACTION BLOCKED. Package installation via apt is disabled in this environment to maintain stability."],
+  ["apt-get", "ACTION BLOCKED. Package installation via apt-get is disabled in this environment to maintain stability."],
+  ["pip", "ACTION BLOCKED. Package installations are restricted. Please ask the user to install dependencies if required."],
+  ["pip3", "ACTION BLOCKED. Package installations are restricted. Please ask the user to install dependencies if required."],
+  ["cargo", "ACTION BLOCKED. Cargo command execution is restricted. Explicitly allow 'cargo' in 'pi-security.json' if needed."]
 ]);
 
 // 2. GLOBAL ALLOWLIST
 export const GLOBAL_ALLOWLIST = new Set([
-  "ls",
   "pwd",
-  "grep",
-  "find",
   "npm",
+  "pnpm",
+  "yarn",
   "echo",
   "pytest",
   "vitest"

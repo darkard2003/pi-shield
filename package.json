@@ -11,15 +11,17 @@
   "license": "ISC",
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.78.0",
-    "@types/shell-quote": "^1.7.5"
+    "@types/shell-quote": "^1.7.5",
+    "typescript": "^6.0.3"
   },
   "dependencies": {
-    "shell-quote": "^1.8.4"
+    "ignore": "^7.0.5",
+    "shell-quote": "^1.8.4",
+    "typebox": "^1.1.39"
   },
   "pi": {
     "extensions": [
-      "./src/path-guard.ts",
-      "./src/shell-guard.ts"
+      "./src/index.ts"
     ]
   }
 }

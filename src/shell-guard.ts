@@ -8,9 +8,16 @@ import * as path from "path";
 let projectAllowed = new Set<string>();
 let projectBlocked = new Map<string, string>();
 
+/**
+ * Hooks into the ExtensionAPI to implement the bash command secure allowlist and blocklist checks,
+ * including strict command substitution blocks and configurable override precedence.
+ *
+ * @param pi The active ExtensionAPI instance.
+ * @param enabled Whether the security guardrail is enabled (default: true).
+ */
 export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean = true) {
 
-  // Hook 1: Load Project Config on Startup
+  // Load Project-Specific Config on Startup
   pi.on("session_start", async (_event, ctx) => {
     if (!enabled) {
       ctx.ui.notify('Security Guardrail is disabled');
@@ -50,7 +57,7 @@ export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean =
     }
   });
 
-  // Hook 2: Validate Commands
+  // Validate and intercept bash tool calls
   pi.on("tool_call", async (event, ctx) => {
     if (!enabled) return;
     if (event.toolName !== "bash") return;
@@ -62,6 +69,15 @@ export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean =
       return { block: true, reason: "Security Guardrail: Empty bash command provided." };
     }
 
+    // Pre-parse check for backticks and command substitutions in raw string
+    if (commandStr.includes("$(") || commandStr.includes("`")) {
+      ctx.ui.notify("Blocked command substitution");
+      return {
+        block: true,
+        reason: "Security Guardrail: Command substitution using '$()' or backticks '`...`' is strictly prohibited."
+      };
+    }
+
     try {
       const tokens = parse(commandStr);
 
@@ -69,37 +85,74 @@ export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean =
         return { block: true, reason: "Security Guardrail: No executable tokens found." };
       }
 
-      // Step A: Check Blocklists
-      const blockedToken = tokens.find(token => {
+      // Check parsed string tokens for any backticks or substitutions
+      const hasSubstitutionToken = tokens.some(token => {
         if (typeof token !== "string") return false;
-        // Check exact match or basename (to catch /bin/rm)
-        const baseName = path.basename(token);
-        return projectBlocked.has(token) || GLOBAL_BLOCKLIST.has(token) ||
-          projectBlocked.has(baseName) || GLOBAL_BLOCKLIST.has(baseName);
-      }) as string | undefined;
+        return token.includes("$(") || token.includes("`");
+      });
 
-      if (blockedToken) {
-        const matchedToken = path.basename(blockedToken);
-        ctx.ui.notify(`Blocked forbidden keyword: '${matchedToken}'`);
-        const specificFeedback = projectBlocked.get(matchedToken) || GLOBAL_BLOCKLIST.get(matchedToken);
+      if (hasSubstitutionToken) {
+        ctx.ui.notify("Blocked command substitution");
         return {
           block: true,
-          reason: `Security Guardrail: ${specificFeedback}`
+          reason: "Security Guardrail: Command substitution using '$()' or backticks '`...`' is strictly prohibited."
         };
       }
 
-      // Step B: Block Dangerous Operators (Allow safe globbing like *.ts)
+      // Extract Base Command (Skipping inline ENV variables like NODE_ENV=test)
+      const execToken = tokens.find(t => typeof t === "string" && !t.includes("=")) as string | undefined;
+      if (!execToken) {
+        return { block: true, reason: "Security Guardrail: No executable command found." };
+      }
+
+      const baseCommand = path.basename(execToken);
+
+      // Overriding Precedence & Allow/Block lists validation:
+      // 1. Project-specific blocklist overrides everything else
+      if (projectBlocked.has(execToken) || projectBlocked.has(baseCommand)) {
+        const specificFeedback = projectBlocked.get(execToken) || projectBlocked.get(baseCommand);
+        ctx.ui.notify(`Blocked by project config: '${baseCommand}'`);
+        return {
+          block: true,
+          reason: `Security Guardrail (Project Block): ${specificFeedback}`
+        };
+      }
+
+      // 2. Project-specific allowlist overrides global blocklist
+      const isProjectAllowed = projectAllowed.has(execToken) || projectAllowed.has(baseCommand);
+
+      if (!isProjectAllowed) {
+        // 3. Global blocklist
+        const isGloballyBlocked = GLOBAL_BLOCKLIST.has(execToken) || GLOBAL_BLOCKLIST.has(baseCommand);
+        if (isGloballyBlocked) {
+          const specificFeedback = GLOBAL_BLOCKLIST.get(execToken) || GLOBAL_BLOCKLIST.get(baseCommand);
+          ctx.ui.notify(`Blocked forbidden keyword: '${baseCommand}'`);
+          return {
+            block: true,
+            reason: `Security Guardrail: ${specificFeedback}`
+          };
+        }
+
+        // 4. Global allowlist
+        const isGloballyAllowed = GLOBAL_ALLOWLIST.has(execToken) || GLOBAL_ALLOWLIST.has(baseCommand);
+        if (!isGloballyAllowed) {
+          ctx.ui.notify(`Blocked unauthorized command: ${baseCommand}`);
+          return {
+            block: true,
+            reason: `ACTION BLOCKED. The command '${baseCommand}' is not explicitly allowed in this project. Ask user to add it in project allow list via pi-security.json, or run it manually`
+          };
+        }
+      }
+
+      // Check for and block dangerous shell operators (allowing safe globbing like *.ts)
       let hasDangerousOperators = false;
 
       for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
 
-        // 1. Standard strings are safe to skip
         if (typeof token === "string") continue;
 
-        // 2. Check Objects (Operators)
         if ('op' in token) {
-          // Allow wildcard globbing (e.g., *.ts)
           if (token.op === "glob") continue;
 
           // Allow output redirection ONLY to /dev/null
@@ -107,15 +160,12 @@ export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean =
           if (redirectOps.includes(token.op as string)) {
             const nextToken = tokens[i + 1];
 
-            // Validate the target is exactly /dev/null
             if (typeof nextToken === "string" && nextToken === "/dev/null") {
-              i++; // Fast-forward the loop past '/dev/null' so we don't evaluate it again
+              i++; // Skip '/dev/null' target
               continue;
             }
           }
 
-          // If we reach this line, it's a dangerous operator (like ; or &&) 
-          // OR it's a redirect to an unauthorized file (like > hack.txt)
           hasDangerousOperators = true;
           break;
         }
@@ -126,25 +176,6 @@ export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean =
         return {
           block: true,
           reason: "ACTION BLOCKED. Shell operators (;, &&, ||) and file redirections are disabled. You may only redirect output to /dev/null."
-        };
-      }
-      // Step C: Extract Base Command (Skipping inline ENV variables like NODE_ENV=test)
-      const execToken = tokens.find(t => typeof t === "string" && !t.includes("="));
-      if (!execToken) {
-        return { block: true, reason: "Security Guardrail: No executable command found." };
-      }
-
-      // Strip absolute paths so "/usr/bin/git" becomes "git" for the allowlist check
-      const baseCommand = path.basename(execToken as string);
-
-      // Step D: Check Allowlists
-      const isAllowed = projectAllowed.has(baseCommand) || GLOBAL_ALLOWLIST.has(baseCommand);
-
-      if (!isAllowed) {
-        ctx.ui.notify(`Blocked unauthorized command: ${baseCommand}`);
-        return {
-          block: true,
-          reason: `ACTION BLOCKED. The command '${baseCommand}' is not explicitly allowed in this project. Ask user to add it in project allow list via py-security.json, or run it manually`
         };
       }
 
