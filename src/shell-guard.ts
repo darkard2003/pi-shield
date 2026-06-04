@@ -1,191 +1,230 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { GLOBAL_ALLOWLIST, GLOBAL_BLOCKLIST } from "./global_constants";
 import { parse } from "shell-quote";
-import * as fs from "fs/promises";
 import * as path from "path";
+import { ShieldConfig } from "./config";
 
-
-let projectAllowed = new Set<string>();
-let projectBlocked = new Map<string, string>();
+const EXTENSION_NAME = "Pi-Shield";
 
 /**
  * Hooks into the ExtensionAPI to implement the bash command secure allowlist and blocklist checks,
  * including strict command substitution blocks and configurable override precedence.
  *
  * @param pi The active ExtensionAPI instance.
+ * @param config The shared extension configuration state.
  * @param enabled Whether the security guardrail is enabled (default: true).
  */
-export default function bashSecureAllowlist(pi: ExtensionAPI, enabled: boolean = true) {
-
-  // Load Project-Specific Config on Startup
-  pi.on("session_start", async (_event, ctx) => {
-    if (!enabled) {
-      ctx.ui.notify('Security Guardrail is disabled');
-      return;
-    }
-
-    projectAllowed.clear();
-    projectBlocked.clear();
-
-    const configPath = path.join(process.cwd(), "pi-security.json");
-
-    try {
-      const fileStats = await fs.stat(configPath);
-
-      if (fileStats.isFile()) {
-        const configData = await fs.readFile(configPath, "utf-8");
-        const config = JSON.parse(configData);
-
-        if (Array.isArray(config.allow)) {
-          config.allow.forEach((cmd: string) => projectAllowed.add(cmd));
-        }
-
-        if (typeof config.block === "object" && config.block !== null) {
-          for (const [cmd, reason] of Object.entries(config.block)) {
-            projectBlocked.set(cmd, reason as string);
-          }
-        }
-
-        ctx.ui.notify(`Guardrail: Loaded config (+${projectAllowed.size} allowed, +${projectBlocked.size} blocked)`);
-      }
-    } catch (error: any) {
-      if (error.code === "ENOENT") {
-        ctx.ui.notify("Security Guardrail enabled (Default rules)");
-      } else {
-        ctx.ui.notify(`Failed to parse pi-security.json: ${error.message}`);
-      }
-    }
-  });
+export default function shellGuard(pi: ExtensionAPI, config: ShieldConfig, enabled: boolean = true) {
 
   // Validate and intercept bash tool calls
   pi.on("tool_call", async (event, ctx) => {
-    if (!enabled) return;
+    if (!enabled || !config.shell.enabled) return;
     if (event.toolName !== "bash") return;
 
     const args = event.input as { command?: string };
     const commandStr = args.command || "";
 
     if (!commandStr.trim()) {
-      return { block: true, reason: "Security Guardrail: Empty bash command provided." };
+      return { block: true, reason: `${EXTENSION_NAME}: Empty bash command provided.` };
     }
 
     // Pre-parse check for backticks and command substitutions in raw string
     if (commandStr.includes("$(") || commandStr.includes("`")) {
-      ctx.ui.notify("Blocked command substitution");
-      return {
-        block: true,
-        reason: "Security Guardrail: Command substitution using '$()' or backticks '`...`' is strictly prohibited."
-      };
+      const policy = config.shell.projectCommandSubstitution || config.shell.globalCommandSubstitution || "block";
+      if (policy === "block") {
+        ctx.ui.notify(`${EXTENSION_NAME}: Blocked command substitution`);
+        return {
+          block: true,
+          reason: `${EXTENSION_NAME}: Command substitution using '$()' or backticks '\`...\`' is strictly prohibited.`
+        };
+      }
+      if (policy === "warn") {
+        const confirmed = await ctx.ui.confirm(
+          `${EXTENSION_NAME}: Substitution Warning`,
+          `Agent is trying to run a command containing command substitution: ${commandStr}. Proceed or Reject?`
+        );
+        if (!confirmed) {
+          return { block: true, reason: `${EXTENSION_NAME}: User rejected command substitution.` };
+        }
+      }
     }
 
     try {
       const tokens = parse(commandStr);
 
       if (tokens.length === 0) {
-        return { block: true, reason: "Security Guardrail: No executable tokens found." };
+        return { block: true, reason: `${EXTENSION_NAME}: No executable tokens found.` };
       }
 
-      // Check parsed string tokens for any backticks or substitutions
-      const hasSubstitutionToken = tokens.some(token => {
-        if (typeof token !== "string") return false;
-        return token.includes("$(") || token.includes("`");
-      });
-
-      if (hasSubstitutionToken) {
-        ctx.ui.notify("Blocked command substitution");
-        return {
-          block: true,
-          reason: "Security Guardrail: Command substitution using '$()' or backticks '`...`' is strictly prohibited."
-        };
-      }
-
-      // Extract Base Command (Skipping inline ENV variables like NODE_ENV=test)
-      const execToken = tokens.find(t => typeof t === "string" && !t.includes("=")) as string | undefined;
-      if (!execToken) {
-        return { block: true, reason: "Security Guardrail: No executable command found." };
-      }
-
-      const baseCommand = path.basename(execToken);
-
-      // Overriding Precedence & Allow/Block lists validation:
-      // 1. Project-specific blocklist overrides everything else
-      if (projectBlocked.has(execToken) || projectBlocked.has(baseCommand)) {
-        const specificFeedback = projectBlocked.get(execToken) || projectBlocked.get(baseCommand);
-        ctx.ui.notify(`Blocked by project config: '${baseCommand}'`);
-        return {
-          block: true,
-          reason: `Security Guardrail (Project Block): ${specificFeedback}`
-        };
-      }
-
-      // 2. Project-specific allowlist overrides global blocklist
-      const isProjectAllowed = projectAllowed.has(execToken) || projectAllowed.has(baseCommand);
-
-      if (!isProjectAllowed) {
-        // 3. Global blocklist
-        const isGloballyBlocked = GLOBAL_BLOCKLIST.has(execToken) || GLOBAL_BLOCKLIST.has(baseCommand);
-        if (isGloballyBlocked) {
-          const specificFeedback = GLOBAL_BLOCKLIST.get(execToken) || GLOBAL_BLOCKLIST.get(baseCommand);
-          ctx.ui.notify(`Blocked forbidden keyword: '${baseCommand}'`);
-          return {
-            block: true,
-            reason: `Security Guardrail: ${specificFeedback}`
-          };
-        }
-
-        // 4. Global allowlist
-        const isGloballyAllowed = GLOBAL_ALLOWLIST.has(execToken) || GLOBAL_ALLOWLIST.has(baseCommand);
-        if (!isGloballyAllowed) {
-          ctx.ui.notify(`Blocked unauthorized command: ${baseCommand}`);
-          return {
-            block: true,
-            reason: `ACTION BLOCKED. The command '${baseCommand}' is not explicitly allowed in this project. Ask user to add it in project allow list via pi-security.json, or run it manually`
-          };
-        }
-      }
-
-      // Check for and block dangerous shell operators (allowing safe globbing like *.ts)
-      let hasDangerousOperators = false;
-
+      // Check for dangerous shell operators and file redirections
       for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
-
-        if (typeof token === "string") continue;
-
-        if ('op' in token) {
-          if (token.op === "glob") continue;
-
-          // Allow output redirection ONLY to /dev/null
-          const redirectOps = [">", ">>", "2>", "&>", "1>"];
-          if (redirectOps.includes(token.op as string)) {
-            const nextToken = tokens[i + 1];
-
-            if (typeof nextToken === "string" && nextToken === "/dev/null") {
-              i++; // Skip '/dev/null' target
-              continue;
-            }
+        if (typeof token === "object" && token !== null && "op" in token) {
+          const op = (token as { op: string }).op;
+          
+          // Check if it's a redirection to /dev/null
+          const isRedirection = [">", ">>", "2>", "1>", "2>>"].includes(op);
+          const nextToken = tokens[i + 1];
+          if (isRedirection && typeof nextToken === "string" && nextToken === "/dev/null") {
+            // Safe redirection, skip to next token after target
+            i++; 
+            continue;
           }
 
-          hasDangerousOperators = true;
-          break;
+          // Check if it's a command chaining operator
+          const isChaining = ["&&", "||", ";", "|", "&"].includes(op);
+          if (isChaining) {
+            const chaining = config.shell.projectChaining || config.shell.globalChaining || "block";
+            
+            if (chaining === "allow") {
+              continue;
+            }
+            
+            if (chaining === "warn") {
+              const confirmed = await ctx.ui.confirm(
+                `${EXTENSION_NAME}: Chaining Warning`,
+                `Agent is trying to run a chained command containing the operator '${op}'. Proceed or Reject?`
+              );
+              if (!confirmed) {
+                return { block: true, reason: `${EXTENSION_NAME}: User rejected command chaining.` };
+              }
+              continue;
+            }
+            
+            ctx.ui.notify(`${EXTENSION_NAME}: Blocked command chaining: '${op}'`);
+            return {
+              block: true,
+              reason: `${EXTENSION_NAME}: Command chaining using '${op}' is prohibited.`
+            };
+          }
+
+          // Otherwise (other redirections, etc.), block it
+          ctx.ui.notify(`${EXTENSION_NAME}: Blocked dangerous shell operator/redirection: '${op}'`);
+          return {
+            block: true,
+            reason: `${EXTENSION_NAME}: The shell operator or file redirection '${op}' is prohibited.`
+          };
         }
       }
 
-      if (hasDangerousOperators) {
-        ctx.ui.notify("Blocked shell injection or file redirect");
-        return {
-          block: true,
-          reason: "ACTION BLOCKED. Shell operators (;, &&, ||) and file redirections are disabled. You may only redirect output to /dev/null."
-        };
+      // Extract all executable command names from the tokens to validate each segment
+      const commandTokens: string[] = [];
+      let isNextCommand = true;
+      for (const token of tokens) {
+        if (typeof token === "string") {
+          if (isNextCommand && !token.includes("=")) {
+            commandTokens.push(token);
+            isNextCommand = false;
+          }
+        } else if (typeof token === "object" && token !== null && "op" in token) {
+          const op = (token as { op: string }).op;
+          if (["&&", "||", ";", "|", "&"].includes(op)) {
+            isNextCommand = true;
+          }
+        }
+      }
+
+      if (commandTokens.length === 0) {
+        return { block: true, reason: `${EXTENSION_NAME}: No executable command found.` };
+      }
+
+      // Validate each command in the chain sequentially
+      for (const execToken of commandTokens) {
+        const baseCommand = path.basename(execToken);
+
+        // Helper checks for pipeline logic
+        const getBlockedReason = (blockedMap: Map<string, string>) => blockedMap.get(execToken) || blockedMap.get(baseCommand);
+        const isAllowed = (allowedSet: Set<string>) => allowedSet.has(execToken) || allowedSet.has(baseCommand);
+        const isWarned = (warnedSet: Set<string>) => warnedSet.has(execToken) || warnedSet.has(baseCommand);
+
+        // --- SECURITY PRECEDENCE PIPELINE FOR EACH COMMAND ---
+
+        // 1. Project Block -> HARD BLOCK
+        const projectBlockReason = getBlockedReason(config.shell.projectBlocked);
+        if (projectBlockReason !== undefined) {
+          ctx.ui.notify(`${EXTENSION_NAME}: Blocked by project config: '${baseCommand}'`);
+          return { block: true, reason: `${EXTENSION_NAME} (Project Block): ${projectBlockReason}` };
+        }
+
+        // 2. Project Allow -> ALLOW
+        if (isAllowed(config.shell.projectAllowed)) {
+          continue;
+        }
+
+        // 3. Project Warn -> WARN & ALLOW (Bypasses Global Block)
+        if (isWarned(config.shell.projectWarned)) {
+          const confirmed = await ctx.ui.confirm(
+            `${EXTENSION_NAME}: Project Warning`,
+            `Agent is trying to run '${baseCommand}', which is flagged as a warning in this project. Proceed or Reject?`
+          );
+          if (!confirmed) return { block: true, reason: `${EXTENSION_NAME}: User rejected warned command.` };
+          continue;
+        }
+
+        // 4. File Execution Policy Check
+        const isFileExec = execToken.startsWith("./") || execToken.startsWith("../") || path.isAbsolute(execToken);
+        if (isFileExec) {
+          const fileExecPolicy = config.shell.projectFileExecution || config.shell.globalFileExecution || "block";
+          if (fileExecPolicy === "block") {
+            ctx.ui.notify(`${EXTENSION_NAME}: Blocked file execution: '${baseCommand}'`);
+            return {
+              block: true,
+              reason: `${EXTENSION_NAME}: Direct execution of file paths is prohibited.`
+            };
+          }
+          if (fileExecPolicy === "warn") {
+            const confirmed = await ctx.ui.confirm(
+              `${EXTENSION_NAME}: File Execution Warning`,
+              `Agent is trying to execute the file path '${execToken}'. Proceed or Reject?`
+            );
+            if (!confirmed) {
+              return { block: true, reason: `${EXTENSION_NAME}: User rejected file execution.` };
+            }
+            continue; // Allowed via warning, skip further checks for this command segment
+          }
+          if (fileExecPolicy === "allow") {
+            continue; // Allowed, skip further checks for this command segment
+          }
+        }
+
+        // 5. Global Block -> HARD BLOCK
+        const globalBlockReason = getBlockedReason(config.shell.globalBlocked);
+        if (globalBlockReason !== undefined) {
+          ctx.ui.notify(`${EXTENSION_NAME}: Blocked: '${baseCommand}'`);
+          return { block: true, reason: `${EXTENSION_NAME}: ${globalBlockReason}` };
+        }
+
+        // 6. Global Allow -> ALLOW
+        if (isAllowed(config.shell.globalAllowed)) {
+          continue;
+        }
+
+        // 7. Fallback
+        const fallback = config.shell.projectFallback || config.shell.globalFallback;
+
+        if (fallback === "block") {
+          ctx.ui.notify(`${EXTENSION_NAME}: Blocked unknown command: '${baseCommand}'`);
+          return {
+            block: true,
+            reason: `${EXTENSION_NAME}: The command '${baseCommand}' is not explicitly allowed. Add it to pi-security.json or change the fallback setting.`
+          };
+        }
+
+        if (fallback === "warn") {
+          const confirmed = await ctx.ui.confirm(
+            `${EXTENSION_NAME}: Security Warning`,
+            `Agent is trying to run '${baseCommand}', which is not in the allow list. Proceed or Reject?`
+          );
+          if (!confirmed) return { block: true, reason: `${EXTENSION_NAME}: User rejected unknown command.` };
+        }
       }
 
       return;
 
     } catch (error) {
-      ctx.ui.notify("Blocked malformed bash string");
+      ctx.ui.notify(`${EXTENSION_NAME}: Blocked malformed bash string`);
       return {
         block: true,
-        reason: `Security Guardrail: Failed to parse command. Error: ${(error as Error).message}`
+        reason: `${EXTENSION_NAME}: Failed to parse command. Error: ${(error as Error).message}`
       };
     }
   });

@@ -1,0 +1,28 @@
+{
+  "allow": [],
+  "warn": [],
+  "block": {
+    "vim": "ACTION BLOCKED. Interactive editors freeze the environment. Use your native 'edit' tool.",
+    "vi": "ACTION BLOCKED. Interactive editors freeze the environment. Use your native 'edit' tool.",
+    "nano": "ACTION BLOCKED. Interactive editors freeze the environment. Use your native 'edit' tool.",
+    "less": "ACTION BLOCKED. Interactive pagers lock up the execution pipeline. Use your native 'read' tool.",
+    "more": "ACTION BLOCKED. Interactive pagers lock up the execution pipeline. Use your native 'read' tool.",
+    "top": "ACTION BLOCKED. Infinite monitoring tools are permanently disabled.",
+    "htop": "ACTION BLOCKED. Infinite monitoring tools are permanently disabled.",
+    "man": "ACTION BLOCKED. The manual viewer hangs the agent.",
+    "mkfs": "ACTION BLOCKED. System formatting is permanently disabled.",
+    "fdisk": "ACTION BLOCKED. Partitioning utilities are strictly blocked.",
+    "parted": "ACTION BLOCKED. Partitioning utilities are strictly blocked.",
+    "shred": "ACTION BLOCKED. File wiping utilities are strictly prohibited.",
+    "wipe": "ACTION BLOCKED. File wiping utilities are strictly prohibited.",
+    "sudo": "ACTION BLOCKED. Sudo/privilege escalation is strictly prohibited.",
+    "ssh": "ACTION BLOCKED. Outbound SSH is permanently disabled.",
+    "scp": "ACTION BLOCKED. Outbound secure file copy is disabled.",
+    "sftp": "ACTION BLOCKED. Outbound file transfers are disabled.",
+    "nc": "ACTION BLOCKED. Arbitrary network connections via Netcat are strictly blocked.",
+    "netcat": "ACTION BLOCKED. Arbitrary network connections via Netcat are strictly blocked.",
+    "bash": "ACTION BLOCKED. Nesting shell environments is disabled.",
+    "sh": "ACTION BLOCKED. Nesting shell environments is disabled.",
+    "zsh": "ACTION BLOCKED. Nesting shell environments is disabled."
+  }
+}

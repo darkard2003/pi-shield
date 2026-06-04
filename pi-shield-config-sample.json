@@ -1,0 +1,40 @@
+{
+  "shellGuard": true,
+  "pathGuard": true,
+  "allow": [
+    "pwd",
+    "npm",
+    "pnpm",
+    "yarn",
+    "echo",
+    "pytest",
+    "vitest",
+    "ls",
+    "grep",
+    "pwd",
+    "find"
+  ],
+  "block": {
+    "vim": "Interactive editors freeze the execution environment. Use native edit tools.",
+    "nano": "Interactive editors freeze the execution environment. Use native edit tools.",
+    "less": "Pagers lock up the pipeline. Use native read tools.",
+    "rm": "Deleting files via bash is disabled.",
+    "ssh": "Outbound SSH is disabled in the sandbox to prevent unauthorized access.",
+    "curl": "Web requests are blocked to maintain environment isolation."
+  },
+  "fallback": "warn",
+  "chaining": "warn",
+  "commandSubstitution": "warn",
+  "fileExecution": "warn",
+  "pathFallback": "block",
+  "gitAccess": "block",
+  "allowedPathSuffixes": [
+    "@earendil-works/pi-coding-agent/docs",
+    "@earendil-works/pi-coding-agent/README.md"
+  ],
+  "restrictedPaths": [
+    "keys/",
+    "secrets.json",
+    "private/"
+  ]
+}
