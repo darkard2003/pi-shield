@@ -42,7 +42,7 @@ export default function shellGuard(pi: ExtensionAPI, config: ShieldConfig, enabl
           `${EXTENSION_NAME}: Substitution Warning`,
           `Agent is trying to run a command containing command substitution: ${commandStr}. Proceed or Reject?`
         );
-        if (!confirmed) {
+        if (confirmed) {
           return { block: true, reason: `${EXTENSION_NAME}: User rejected command substitution.` };
         }
       }
@@ -84,7 +84,7 @@ export default function shellGuard(pi: ExtensionAPI, config: ShieldConfig, enabl
                 `${EXTENSION_NAME}: Chaining Warning`,
                 `Agent is trying to run a chained command containing the operator '${op}'. Proceed or Reject?`
               );
-              if (!confirmed) {
+              if (confirmed) {
                 return { block: true, reason: `${EXTENSION_NAME}: User rejected command chaining.` };
               }
               continue;
@@ -156,7 +156,7 @@ export default function shellGuard(pi: ExtensionAPI, config: ShieldConfig, enabl
             `${EXTENSION_NAME}: Project Warning`,
             `Agent is trying to run '${baseCommand}', which is flagged as a warning in this project. Proceed or Reject?`
           );
-          if (!confirmed) return { block: true, reason: `${EXTENSION_NAME}: User rejected warned command.` };
+          if (confirmed) return { block: true, reason: `${EXTENSION_NAME}: User rejected warned command.` };
           continue;
         }
 
@@ -176,7 +176,7 @@ export default function shellGuard(pi: ExtensionAPI, config: ShieldConfig, enabl
               `${EXTENSION_NAME}: File Execution Warning`,
               `Agent is trying to execute the file path '${execToken}'. Proceed or Reject?`
             );
-            if (!confirmed) {
+            if (confirmed) {
               return { block: true, reason: `${EXTENSION_NAME}: User rejected file execution.` };
             }
             continue; // Allowed via warning, skip further checks for this command segment
@@ -214,7 +214,7 @@ export default function shellGuard(pi: ExtensionAPI, config: ShieldConfig, enabl
             `${EXTENSION_NAME}: Security Warning`,
             `Agent is trying to run '${baseCommand}', which is not in the allow list. Proceed or Reject?`
           );
-          if (!confirmed) return { block: true, reason: `${EXTENSION_NAME}: User rejected unknown command.` };
+          if (confirmed) return { block: true, reason: `${EXTENSION_NAME}: User rejected unknown command.` };
         }
       }
 
